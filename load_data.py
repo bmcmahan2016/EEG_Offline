@@ -9,6 +9,10 @@ import msgpack
 from scipy.signal import butter, lfilter
 from scipy import signal
 import eegclean
+
+
+def new_func():
+    print('I am a new function')
  
  
 def create_connection(db_file):
