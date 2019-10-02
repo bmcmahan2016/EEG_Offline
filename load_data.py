@@ -8,7 +8,7 @@ import struct
 import msgpack
 from scipy.signal import butter, lfilter
 from scipy import signal
-import eegclean
+#import eegclean
 
 
 def new_func():
