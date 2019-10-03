@@ -100,7 +100,7 @@ def SerializeTrials(trial_idxs):
         direction is occuring. The integer is determined by the number of previous 
         reach trials in the same direction. 
     '''
-    trial_counter = 0           # will count the number of trials corresponding to a specific reach
+    trial_counter = 1           # will count the number of trials corresponding to a specific reach
     last_idx_in_trial = False   #flag indiciating if the last time step was in a trial
     num_t_steps = len(trial_idxs)
     # enumerated_trials will indicate the trial number each time step belongs to or zero for 
@@ -111,7 +111,7 @@ def SerializeTrials(trial_idxs):
         # if the current time step in the data is part of a reach trial then
         # add this to the serialized trial
         if trial_idxs[t_step] == 1:
-            enumerated_trials[t_step] = trial_idxs[t_step] + trial_counter
+            enumerated_trials[t_step] = trial_counter
             last_idx_in_trial = True 
         # if the current time step is not part of a reach trial but 
         # the past time step was increment the trial counter
@@ -179,19 +179,24 @@ def PartitionTrials(target_pos):
     target_pos_y = Binarize(target_pos[:,1])
     # create a state variable that maps each reach direction to an integer
     # mapping from reach direction to integer:
-    # up=2, down=-2, left=-1, and right=1
-    reach_state = target_pos_x + 2*target_pos_y
+    # down=0, left=1, up=2, and right=3
+    reach_state_mapping = {(0, -1) : 0, # down
+                           (-1, 0) : 1, # left
+                           (0, 1) : 2,  # up
+                           (1, 0) : 3,  # right
+                           (0, 0) : 4}  # center
+    reach_state = np.array([reach_state_mapping[(x, y)] for x, y in zip(target_pos_x, target_pos_y)])
 
     # create a dictionary to serialize trials
     enumerated_trials = {}
-    down_idxs = (reach_state==-2)
+    down_idxs = (reach_state==0)
     enumerated_trials['down'] = SerializeTrials(down_idxs)
-    left_idxs = (reach_state==-1)
+    left_idxs = (reach_state==1)
     enumerated_trials['left'] = SerializeTrials(left_idxs)
-    right_idxs = (reach_state==1)
-    enumerated_trials['right'] = SerializeTrials(right_idxs)
     up_idxs = (reach_state==2)
     enumerated_trials['up'] = SerializeTrials(up_idxs)
+    right_idxs = (reach_state==3)
+    enumerated_trials['right'] = SerializeTrials(right_idxs)
 
     return enumerated_trials, reach_state
 
