@@ -228,10 +228,47 @@ def MakeTrainingData(enumerated_trials, eeg_data, reach_direction='down', Verbos
             plt.title(str(reach_direction) + 'Trial #' + str(trial_num))
     return training_data
 
+def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
+    '''
+    GetData will return training data and classes in specified bin sizes
+    PARAMETERS
+    -eeg_data: filtered eeg data with shape (num_time_steps, 16)
+    -target_classes: the target class for each time step with shape (num_time_steps, 16)
+    -bin_size: the number of time_steps to include in one data sample for classifying a reach direction
+    -initial_delay: the amount of time in ms to skip after the start of a new reach direction
+    RETURNS:
+    -training_data: binned eeg_data with reaches to the center removed - has shape (n, bin_size, 16)
+    -training_classes: the class associated with each row of training data - has shape (n,)
+    '''
+
+    prev_target = 4
+    delay_counter = 0
+    bin_counter = 1
+    training_data = np.zeros((1, bin_size, 16))
+    training_classes = np.zeros((1,))
+    for i in range(len(target_classes)):
+        cur_target = target_classes[i]
+        if target_classes[i] != prev_target: # changing target indicates the start of a new reach direction
+            delay_counter = 0
+            bin_counter = 1
+            prev_target = cur_target
+        if cur_target == 4: # for now, skip all reaches to center
+            continue
+        elif delay_counter >= initial_delay and bin_counter >= bin_size:
+            training_classes = np.hstack((training_classes, target_classes[i])) # add the class label
+            bin_start = i - bin_size + 1 # this data sample will include time steps from the previous bin_size eeg recordings
+            bin_end = i + 1
+            training_data = np.vstack((training_data, np.reshape(eeg_data[bin_start:bin_end], (1, bin_size, 16))))
+            bin_counter = 1
+        else:
+            bin_counter += 1
+            delay_counter += 1
+
+    return training_data, training_classes
 
 def main():
     # experiment12.db is the file containing the sample experimental data
-    database = "experiment12.db"
+    database = "data/experiment1.db"
     # create a database connection to load the data
     conn = create_connection(database)
     cur = conn.cursor()
@@ -253,33 +290,12 @@ def main():
         eeg_data = FilterEEG(eeg_i, eeg_ii)
 
         #partition the EEG data into trials based on target position
-        enumerated_trials, state = PartitionTrials(target_pos)
+        enumerated_trials, target_classes = PartitionTrials(target_pos)
 
-        #plot some results
-        plt.figure()
-        plt.plot(state)
-        plt.plot(enumerated_trials['up'])
-        plt.plot(enumerated_trials['down'])
-        plt.legend(['state', 'Up Reach Trials (Enumerated)', 'Down Reach Trials (Enumerated)'])
-        plt.title('Enumeration of EEG Reach Trials')
-
-
-        # below code will create training data 
-        training_data_tmp = []
-        for reach_direction in ['down', 'up', 'left', 'right']:
-            training_data_tmp.append(MakeTrainingData(enumerated_trials, eeg_data, reach_direction=reach_direction))
-
-        num_data_points = 0
-        for _ in range(len(training_data_tmp)):
-            num_data_points += len(training_data_tmp[_])
-            len_of_trial = len(training_data_tmp[_][0])
-            print(len_of_trial)
-
-        training_data = np.zeros((num_data_points, len_of_trial, 16))
-
-        print('training_data', training_data.shape)
-        plt.show()
-
+        training_data, training_classes = GetData(eeg_data, target_classes, bin_size=10)
+        print(training_data.shape)
+        print(eeg_data.shape)
+        print(training_classes.shape)
 
 if __name__ == '__main__':
     main()
