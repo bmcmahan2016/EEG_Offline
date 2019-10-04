@@ -8,8 +8,6 @@ import struct
 import msgpack
 from scipy.signal import butter, lfilter
 from scipy import signal
-#import eegclean
-
 
 def create_connection(db_file):
     """ create a database connection to the SQLite database
@@ -240,12 +238,16 @@ def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
     -training_data: binned eeg_data with reaches to the center removed - has shape (n, bin_size, 16)
     -training_classes: the class associated with each row of training data - has shape (n,)
     '''
+    eeg_data = eeg_data[15*125:-5*125] # remove first 15 seconds and last 5 seconds of data
+    target_classes = target_classes[15*125:-5*125]
 
+    initial_delay = np.ceil(initial_delay / 8.0) # each time tick is 8 ms
     prev_target = 4
     delay_counter = 0
     bin_counter = 1
     training_data = np.zeros((1, bin_size, 16))
     training_classes = np.zeros((1,))
+
     for i in range(len(target_classes)):
         cur_target = target_classes[i]
         if target_classes[i] != prev_target: # changing target indicates the start of a new reach direction
@@ -255,19 +257,24 @@ def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
         if cur_target == 4: # for now, skip all reaches to center
             continue
         elif delay_counter >= initial_delay and bin_counter >= bin_size:
-            training_classes = np.hstack((training_classes, target_classes[i])) # add the class label
             bin_start = i - bin_size + 1 # this data sample will include time steps from the previous bin_size eeg recordings
             bin_end = i + 1
-            training_data = np.vstack((training_data, np.reshape(eeg_data[bin_start:bin_end], (1, bin_size, 16))))
-            bin_counter = 1
+            data_sample = eeg_data[bin_start:bin_end]
+            bin_counter = 1 # reset bin counter
+            if (np.sum(data_sample) == 0): # skip data samples that don't have any recordings
+                continue
+            training_data = np.vstack((training_data, np.reshape(data_sample, (1, bin_size, 16))))
+            training_classes = np.hstack((training_classes, target_classes[i])) # add the class label
         else:
             bin_counter += 1
             delay_counter += 1
 
+    training_data = np.delete(training_data, 0, axis=0) # remove shape placeholder dimension
+    training_classes = np.delete(training_classes, 0, axis=0)
     return training_data, training_classes
 
 def main():
-    # experiment12.db is the file containing the sample experimental data
+    # experiment1.db is the file containing the sample experimental data
     database = "data/experiment1.db"
     # create a database connection to load the data
     conn = create_connection(database)
@@ -292,10 +299,24 @@ def main():
         #partition the EEG data into trials based on target position
         enumerated_trials, target_classes = PartitionTrials(target_pos)
 
-        training_data, training_classes = GetData(eeg_data, target_classes, bin_size=10)
-        print(training_data.shape)
-        print(eeg_data.shape)
-        print(training_classes.shape)
+        training_data, training_classes = GetData(eeg_data, target_classes, bin_size=50)
+        print("Training data shape", training_data.shape)
+        print("Training class shape", training_classes.shape)
+
+        _, counts = np.unique(training_classes, return_counts=True)
+        total_trials = np.sum(counts)
+        trial_freq = {'Down' : (counts[0], float(counts[0])/total_trials),
+                      'Left' : (counts[1], float(counts[1])/total_trials),
+                      'Up' : (counts[2], float(counts[2])/total_trials),
+                      'Right' : (counts[3], float(counts[3])/total_trials)}
+        print("Relative trial frequency", trial_freq)
+
+        plt.figure()
+        plt.plot(training_data[0])
+        plt.title("Reach direction: {}".format(training_classes[0]))
+        plt.xlabel("Time ticks")
+        plt.ylabel("EEG Recording per Channel")
+        plt.show()
 
 if __name__ == '__main__':
     main()
