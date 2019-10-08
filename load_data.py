@@ -10,6 +10,11 @@ from scipy.signal import butter, lfilter
 from scipy import signal
 import os
 
+CLASS_MAP = {0 : 'Down', # map numerical classes to reach directions
+             1 : 'Left',
+             2 : 'Up',
+             3 : 'Right'}
+
 def create_connection(db_file):
     """ create a database connection to the SQLite database
         specified by the db_file
@@ -150,9 +155,9 @@ def FilterEEG(eeg1, eeg2):
     # first remove 60Hz noise
     eeg1_filt = []
     eeg2_filt = []
-    for _ in range(8):
-        eeg1_filt.append(EEGFilter(eeg1[:,_]))
-        eeg2_filt.append(EEGFilter(eeg2[:,_]))
+    for c in range(8):
+        eeg1_filt.append(EEGFilter(eeg1[:,c]))
+        eeg2_filt.append(EEGFilter(eeg2[:,c]))
 
     # concatenate all 16 EEG channels into a single NumPy array
     eeg_data = np.zeros((len(eeg1_filt[0]), 16))
@@ -187,17 +192,18 @@ def PartitionTrials(target_pos):
     reach_state = np.array([reach_state_mapping[(x, y)] for x, y in zip(target_pos_x, target_pos_y)])
 
     # create a dictionary to serialize trials
-    enumerated_trials = {}
-    down_idxs = (reach_state==0)
-    enumerated_trials['down'] = SerializeTrials(down_idxs)
-    left_idxs = (reach_state==1)
-    enumerated_trials['left'] = SerializeTrials(left_idxs)
-    up_idxs = (reach_state==2)
-    enumerated_trials['up'] = SerializeTrials(up_idxs)
-    right_idxs = (reach_state==3)
-    enumerated_trials['right'] = SerializeTrials(right_idxs)
+    # this does not seem to currently be needed
+    # enumerated_trials = {}
+    # down_idxs = (reach_state==0)
+    # enumerated_trials['down'] = SerializeTrials(down_idxs)
+    # left_idxs = (reach_state==1)
+    # enumerated_trials['left'] = SerializeTrials(left_idxs)
+    # up_idxs = (reach_state==2)
+    # enumerated_trials['up'] = SerializeTrials(up_idxs)
+    # right_idxs = (reach_state==3)
+    # enumerated_trials['right'] = SerializeTrials(right_idxs)
 
-    return enumerated_trials, reach_state
+    return reach_state
 
 def MakeTrainingData(enumerated_trials, eeg_data, reach_direction='down', Verbose=False):
     '''
@@ -227,14 +233,15 @@ def MakeTrainingData(enumerated_trials, eeg_data, reach_direction='down', Verbos
             plt.title(str(reach_direction) + 'Trial #' + str(trial_num))
     return training_data
 
-def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
+def GetExperimentData(eeg_data, target_classes, bin_size=1, initial_delay=0, include_center=False):
     '''
-    GetData will return training data and classes in specified bin sizes
+    GetExperimentData will return training data and classes in specified bin sizes for a single experiment trial
     PARAMETERS
     -eeg_data: filtered eeg data with shape (num_time_steps, 16)
     -target_classes: the target class for each time step with shape (num_time_steps, 16)
     -bin_size: the number of time_steps to include in one data sample for classifying a reach direction
     -initial_delay: the amount of time in ms to skip after the start of a new reach direction
+    -include_center: include reaches back to the center in training data if true, otherwise discard them
     RETURNS:
     -training_data: binned eeg_data with reaches to the center removed - has shape (n, bin_size, 16)
     -training_classes: the class associated with each row of training data - has shape (n,)
@@ -244,19 +251,25 @@ def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
 
     initial_delay = np.ceil(initial_delay / 8.0) # each time tick is 8 ms
     prev_target = 4
+    cur_target = 4
     delay_counter = 0
     bin_counter = 1
     training_data = []
     training_classes = []
 
+    center_reach_map = {0 : 2,
+                        1 : 3,
+                        2 : 0,
+                        3 : 1}
+
     for i in range(len(target_classes)):
-        cur_target = target_classes[i]
-        if target_classes[i] != prev_target: # changing target indicates the start of a new reach direction
+        if cur_target != target_classes[i]: # changing target indicates the start of a new reach direction
             delay_counter = 0
             bin_counter = 1
             prev_target = cur_target
-        if cur_target == 4: # for now, skip all reaches to center
-            continue
+            cur_target = target_classes[i]
+        if cur_target == 4 and not include_center:
+            continue # skip all reaches to center
         elif delay_counter >= initial_delay and bin_counter >= bin_size:
             bin_start = i - bin_size + 1 # this data sample will include time steps from the previous bin_size eeg recordings
             bin_end = i + 1
@@ -265,7 +278,10 @@ def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
             if (np.sum(data_sample) == 0): # skip data samples that don't have any recordings
                 continue
             training_data.append(data_sample)
-            training_classes.append(target_classes[i]) # add the class label
+            if cur_target != 4:
+                training_classes.append(cur_target) # add the class label
+            else:
+                training_classes.append(center_reach_map[prev_target])
         else:
             bin_counter += 1
             delay_counter += 1
@@ -274,23 +290,26 @@ def GetData(eeg_data, target_classes, bin_size=1, initial_delay=0):
     training_classes = np.array(training_classes)
     return training_data, training_classes
 
-def main():
-    # experiment*.db is the file containing the sample experimental data
-    num_db_files = len( os.listdir('data')) - 1 # remove one for readme file
-    db_file_limit = 5 # set temporary limit on number of experiments to use
+def GetData(num_experiments):
+    '''
+    GetData will return training data and classes for a specified number of experiments
+    PARAMETERS
+    -num_experiments: the number of experiments to use for training data
+    RETURNS:
+    -training_data: binned eeg_data with reaches to the center removed - has shape (n, bin_size, 16)
+    -training_classes: the class associated with each row of training data - has shape (n,)
+    '''
     training_data = []
     training_classes = []
-    
+
     # this assumes that db files are labeled experiment1.db, experiment2.db, etc
-    for db_num in range(min(num_db_files, db_file_limit)):
+    for db_num in range(num_experiments):
         database = os.path.join('data', 'experiment' + str(db_num + 1) + '.db')
 
         # create a database connection to load the data
         conn = create_connection(database)
         cur = conn.cursor()
         with conn:
-            cols = cur.execute("PRAGMA table_info(signals_table)").fetchall()
-
             # select the binary eeg data from the database
             eeg_i_b = cur.execute("SELECT eegsignali FROM signals_table").fetchall()
             eeg_ii_b = cur.execute("SELECT eegsignalii FROM signals_table").fetchall()
@@ -307,31 +326,75 @@ def main():
             eeg_data = FilterEEG(eeg_i, eeg_ii)
 
             #partition the EEG data into trials based on target position
-            enumerated_trials, target_classes = PartitionTrials(target_pos)
+            target_classes = PartitionTrials(target_pos)
 
-            data, classes = GetData(eeg_data, target_classes, bin_size=50)
+            data, classes = GetExperimentData(eeg_data, target_classes, bin_size=50)
             training_data.append(data)
             training_classes.append(classes)
+    
+    return np.vstack(training_data), np.hstack(training_classes)
 
-    training_data = np.vstack(training_data)
-    training_classes = np.hstack(training_classes)
+def PlotData(num_rows, num_cols, plot_data, plot_labels):
+    '''
+    PlotData will plot subplots of the provided data
+    PARAMETERS
+    -num_rows: the number of rows in the subplot
+    -num_cols: the number of columns in the subplot
+    -plot_data: the data to be plotted in each subplot
+    -plot_labels: the class label for each data sample in plot_data, must be the same length as plot_data
+   '''
+    i = 0
+    stop_var = False
+    while (i < len(plot_labels)):
+        fig, ax = plt.subplots(nrows=num_rows, ncols=num_cols, sharex=True, sharey=True)
+        for row in ax:
+            for col in row:
+                if i >= len(plot_labels):
+                    stop_var = True
+                    break
+                col.plot(plot_data[i])
+                col.title.set_text("Reach direction: {}".format(CLASS_MAP[plot_labels[i]]))
+                i += 1
+            if stop_var:
+                break
+
+        plt.tight_layout()
+        fig.add_subplot(111, frameon=False)
+        plt.tick_params(labelcolor='none', top=False, bottom=False, left=False, right=False)
+        plt.xlabel("Time ticks")
+        plt.ylabel("EEG Recording per Channel")
+        plt.show()
+
+def main():
+    # experiment*.db is the file containing the sample experimental data
+    num_db_files = len(os.listdir('data')) - 1 # remove one for readme file
+    db_file_limit = 2 # set temporary limit on number of experiments to use
+
+    training_data, training_classes = GetData(min(num_db_files, db_file_limit))
     print("Training data shape", training_data.shape)
     print("Training class shape", training_classes.shape)
 
-    _, counts = np.unique(training_classes, return_counts=True)
+    uniques, counts = np.unique(training_classes, return_counts=True)
     total_trials = np.sum(counts)
-    trial_freq = {'Down' : (counts[0], float(counts[0])/total_trials),
-                    'Left' : (counts[1], float(counts[1])/total_trials),
-                    'Up' : (counts[2], float(counts[2])/total_trials),
-                    'Right' : (counts[3], float(counts[3])/total_trials)}
+    trial_freq = {CLASS_MAP[uniques[0]] : (counts[0], float(counts[0])/total_trials),
+                  CLASS_MAP[uniques[1]] : (counts[1], float(counts[1])/total_trials),
+                  CLASS_MAP[uniques[2]] : (counts[2], float(counts[2])/total_trials),
+                  CLASS_MAP[uniques[3]] : (counts[3], float(counts[3])/total_trials)}
     print("Relative trial frequency", trial_freq)
 
-    plt.figure()
-    plt.plot(training_data[0])
-    plt.title("Reach direction: {}".format(training_classes[0]))
-    plt.xlabel("Time ticks")
-    plt.ylabel("EEG Recording per Channel")
-    plt.show()
+    plot_map = {0 : False, 1 : False, 2 : False, 3 : False}
+    plot_data = []
+    plot_labels = []
+    for i in range(len(training_classes)):
+        if plot_map[training_classes[i]]:
+            continue
+        plot_data.append(training_data[i])
+        plot_labels.append(training_classes[i])
+        plot_map[training_classes[i]] = True
+        if len(plot_data) == 4:
+            break
+
+    PlotData(2, 2, plot_data, plot_labels)
 
 if __name__ == '__main__':
     main()
