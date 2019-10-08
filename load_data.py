@@ -67,12 +67,19 @@ def EEGFilter(data, lowcut=5.0, highcut=50.0, fs=125.0, order=5):
     filter the EEG signal between 5 and 50 Hz
     '''
     # first notch out 60Hz noise
-    b, a = Notch60(fs)
-    y_notched = lfilter(b, a, data)
+    notch_b, notch_a = Notch60(fs)
+    notch_z = signal.lfilter_zi(notch_b, 1)
+    result = np.zeros(data.size)
+    for i, x in enumerate(data):
+        result[i], notch_z = lfilter(notch_b, notch_a, [x], zi=notch_z)
+
     # next perform bandpass filering on the data
-    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    y_banded = lfilter(b, a, y_notched)
-    return y_banded
+    band_b, band_a = butter_bandpass(lowcut, highcut, fs, order=order)
+    band_z = signal.lfilter_zi(band_b, 1)
+    for i, x in enumerate(result):
+        result[i], band_z = lfilter(band_b, band_a, [x], zi=band_z)
+
+    return result
 
 def Binarize(data):
     trace_max = np.max(data)
