@@ -297,11 +297,14 @@ def GetExperimentData(eeg_data, target_classes, bin_size=1, initial_delay=0, inc
     training_classes = np.array(training_classes)
     return training_data, training_classes
 
-def GetData(num_experiments):
+def GetData(num_experiments, bin_size=1, initial_delay=0, include_center=False):
     '''
     GetData will return training data and classes for a specified number of experiments
     PARAMETERS
     -num_experiments: the number of experiments to use for training data
+    -bin_size: the number of time_steps to include in one data sample for classifying a reach direction
+    -initial_delay: the amount of time in ms to skip after the start of a new reach direction
+    -include_center: include reaches back to the center in training data if true, otherwise discard them
     RETURNS:
     -training_data: binned eeg_data with reaches to the center removed - has shape (n, bin_size, 16)
     -training_classes: the class associated with each row of training data - has shape (n,)
@@ -309,8 +312,10 @@ def GetData(num_experiments):
     training_data = []
     training_classes = []
 
+    num_db_files = len(os.listdir('data')) - 1 # remove one for readme file
+
     # this assumes that db files are labeled experiment1.db, experiment2.db, etc
-    for db_num in range(num_experiments):
+    for db_num in range(min(num_db_files, num_experiments)):
         database = os.path.join('data', 'experiment' + str(db_num + 1) + '.db')
 
         # create a database connection to load the data
@@ -335,7 +340,8 @@ def GetData(num_experiments):
             #partition the EEG data into trials based on target position
             target_classes = PartitionTrials(target_pos)
 
-            data, classes = GetExperimentData(eeg_data, target_classes, bin_size=50)
+            data, classes = GetExperimentData(eeg_data, target_classes, bin_size=bin_size,
+                initial_delay=initial_delay, include_center=include_center)
             training_data.append(data)
             training_classes.append(classes)
     
@@ -374,10 +380,9 @@ def PlotData(num_rows, num_cols, plot_data, plot_labels):
 
 def main():
     # experiment*.db is the file containing the sample experimental data
-    num_db_files = len(os.listdir('data')) - 1 # remove one for readme file
     db_file_limit = 2 # set temporary limit on number of experiments to use
 
-    training_data, training_classes = GetData(min(num_db_files, db_file_limit))
+    training_data, training_classes = GetData(db_file_limit, bin_size=50)
     print("Training data shape", training_data.shape)
     print("Training class shape", training_classes.shape)
 
