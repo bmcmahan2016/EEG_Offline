@@ -18,13 +18,16 @@ class DataManager():
 
     # pass all global parameters to instantion of class
     def __init__(self, lowcut=5.0, highcut=50.0, fs=125.0, filter_order=5, bin_size=1, trial_delay=0, include_center=False):
+        # filter params
         self.lowcut = lowcut
         self.highcut = highcut
+        self.fs = fs
+        self.filter_order = filter_order
+
+        # data set params
         self.bin_size = bin_size
         self.trial_delay = trial_delay
         self.include_center = include_center
-        self.fs = fs
-        self.filter_order = filter_order
 
     def ButterBandpass(self):
         '''
