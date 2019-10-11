@@ -1,14 +1,18 @@
 import numpy as np
-from load_data import GetData
+from load_data import DataManager
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
-from load_data import CLASS_MAP
 from sklearn import preprocessing
+import argparse
 
 def main():
-    db_file_limit = 5
-    training_data, training_classes = GetData(db_file_limit, bin_size=10)
+    parser = argparse.ArgumentParser(description='Predict reach directions')
+    parser.add_argument("-f", "--file_limit", type=int, help="number of db files to use")
+    args = parser.parse_args()
+
+    data_manager = DataManager(bin_size=10, lowcut=5.0, highcut=50.0)
+    training_data, training_classes = data_manager.GetData(args.file_limit)
     n,b,c = training_data.shape
     training_data = training_data.reshape((n, b*c))
     print("Training data shape", training_data.shape)
@@ -16,10 +20,10 @@ def main():
 
     uniques, counts = np.unique(training_classes, return_counts=True)
     total_trials = np.sum(counts)
-    trial_freq = {CLASS_MAP[uniques[0]] : (counts[0], float(counts[0])/total_trials),
-                  CLASS_MAP[uniques[1]] : (counts[1], float(counts[1])/total_trials),
-                  CLASS_MAP[uniques[2]] : (counts[2], float(counts[2])/total_trials),
-                  CLASS_MAP[uniques[3]] : (counts[3], float(counts[3])/total_trials)}
+    trial_freq = {DataManager.CLASS_MAP[uniques[0]] : (counts[0], float(counts[0])/total_trials),
+                  DataManager.CLASS_MAP[uniques[1]] : (counts[1], float(counts[1])/total_trials),
+                  DataManager.CLASS_MAP[uniques[2]] : (counts[2], float(counts[2])/total_trials),
+                  DataManager.CLASS_MAP[uniques[3]] : (counts[3], float(counts[3])/total_trials)}
     print("Relative trial frequency", trial_freq)
     print()
 
