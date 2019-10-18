@@ -4,3 +4,4 @@ Experiment2: Scott acquired 3 minutes of EEG data of imagined movement during th
 Experiment3: Scott acquired 3 minutes of EEG data of imagined movement during the center-out-auto task. First few trials are likely junk
 Experiment4: Scott acquired 3 minutes of EEG data of imagined movement while standing during the center-out-auto task. First few trials are likely junk
 Experiment5: Scott acquired 5 minutes of EEG data of imagined movement while standing during the center-out-auto task. First few trials are likely junk
+Experiments 6-8: Brandon acquired 5 minutes of EEG data of imagined movement (of the right arm) while sitting during the center-out-auto task. First few trials should be discarded

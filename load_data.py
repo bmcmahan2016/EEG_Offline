@@ -246,9 +246,9 @@ class DataManager():
 
         num_db_files = len(os.listdir('data')) - 1 # remove one for readme file
 
-        # this assumes that db files are labeled experiment1.db, experiment2.db, etc
+        # this assumes that db files are labeled experiment_1.db, experiment_2.db, etc
         for db_num in range(min(num_db_files, num_experiments)):
-            database = os.path.join('data', 'experiment' + str(db_num + 1) + '.db')
+            database = os.path.join('data', 'experiment_' + str(db_num + 1) + '.db')
 
             # create a database connection to load the data
             conn = self.CreateDBConnection(database)
