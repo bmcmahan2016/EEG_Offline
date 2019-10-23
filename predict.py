@@ -49,16 +49,16 @@ def ClassifySVM(training_data, training_classes):
     y_pred = clf.predict(X_test)
 
     train_acc = 100. * clf.score(X_train, y_train)
-    print("train accuracy:", train_acc)
+    print("Train accuracy:", train_acc)
     test_acc = 100. * clf.score(X_test, y_test)
-    print("test accuracy:", test_acc)
+    print("Test accuracy:", test_acc)
     cm = confusion_matrix(y_test, y_pred)
     print(cm)
 
 def TrainNN(net, train_loader):
     criterion = nn.NLLLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
-    for epoch in range(20):
+    for epoch in range(75):
         correct = 0
         total = 0
         for batch_idx, (data, target) in enumerate(train_loader):
@@ -96,7 +96,7 @@ def TestNN(net, test_loader):
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
-def ClassifyNN(training_data, training_classes, num_classes=4):
+def ClassifyNN(training_data, training_classes, net):
     X_train, X_test, y_train, y_test = train_test_split(training_data, training_classes, test_size=0.2, random_state=0) 
     X_train_tensor = torch.Tensor(X_train)
     y_train_tensor = torch.Tensor(y_train).long()
@@ -108,36 +108,54 @@ def ClassifyNN(training_data, training_classes, num_classes=4):
     test_dataset = utils.TensorDataset(X_test_tensor, y_test_tensor)
     test_loader = utils.DataLoader(test_dataset, batch_size=100)
 
-    # net = Net(training_data.shape[1], num_classes)
-    net = ConvNet(num_classes)
     TrainNN(net, train_loader)
     TestNN(net, test_loader)
 
 def main():
     parser = argparse.ArgumentParser(description='Predict reach directions')
-    parser.add_argument("-l", "--experiment_limit", type=int, required=True, help="number of db files to use")
-    parser.add_argument("-m", "--classification_method", type=str, required=False, default="SVM",
-        help="Type of classifier: SVM or NN (SVM is default)")
+    parser.add_argument("-e", "--experiment_limit", type=int, required=False, default=5,
+        help="Number of db files to use")
+    parser.add_argument("-c", "--collection_type", type=str, required=False, default="non_gel",
+        help="Type of data collection to use: gel or non_gel (non_gel is default)")
+    parser.add_argument("-b", "--bin_size", type=int, required=False, default=10,
+        help="Number of time ticks per data sample")
+    parser.add_argument("-l", "--lowcut", type=float, required=False, default=30.0,
+        help="Lowcut frequency for bandpass filter")
+    parser.add_argument("-t", "--highcut", type=float, required=False, default=60.0,
+        help="Highcut frequency for bandpass filter")
+    parser.add_argument("-i", "--include_center", action="store_true",
+        help="Include reaches back to the center in the data set")
+    parser.add_argument("-d", "--reach_directions", type=str, nargs='+', required=False, 
+        default=["Down", "Left", "Up", "Right"],
+        help="Any combination of reach directions to include in data set: Down Left Up Right")
+    parser.add_argument("-m", "--model", type=str, required=False, default="SVM",
+        help="Type of classifier model: SVM, Dense, or Conv (SVM is default)")
     args = parser.parse_args()
 
-    data_manager = DataManager(bin_size=50, lowcut=30.0, highcut=60.0, include_center=False) # set parameters for data filtering and collection
-    training_data, training_classes = data_manager.GetData(args.experiment_limit) # get data for specified number of experiments
+    data_manager = DataManager(collection_type=args.collection_type, bin_size=args.bin_size,
+        lowcut=args.lowcut, highcut=args.highcut, include_center=args.include_center) # set parameters for data filtering and collection
+    training_data, training_classes = data_manager.GetData(args.experiment_limit, plot_freq=False) # get data for specified number of experiments
 
     class_map = DataManager.CLASS_MAP
-    include_classes = ['Left', 'Right'] # update classification task to include only these classes
-    training_data, training_classes, class_map = UpdateClassificationTask(training_data, training_classes, include_classes)
+    if (len(args.reach_directions) < 4): # update classification task to include only these classes
+        training_data, training_classes, class_map = UpdateClassificationTask(training_data, training_classes, args.reach_directions)
     
     num_classes = GetClassFrequency(training_classes, class_map) # print the class frequency in the data set
-
+    
     # each data sample has 2D array of bin_size x eeg_channels
     # we must flatten this into a 1D vector for SVM classification
     n,h,c = training_data.shape
-    # training_data = training_data.reshape((n, -1))
-    training_data = training_data.reshape((n, 1, h, c))
-    if args.classification_method == "SVM":
+    if args.model == "SVM":
+        training_data = training_data.reshape((n, -1))
         ClassifySVM(training_data, training_classes) # train and evaluate SVM on this data set
-    elif args.classification_method == "NN":
-        ClassifyNN(training_data, training_classes, num_classes=num_classes) # train and evaluate neural network on this data set
+    else:
+        if args.model == "Dense":
+            training_data = training_data.reshape((n, -1))
+            net = Net(training_data.shape[1], num_classes)
+        elif args.model == "Conv": # currently only works for bin size = 50
+            training_data = training_data.reshape((n, 1, h, c))
+            net = ConvNet(num_classes)
+        ClassifyNN(training_data, training_classes, net) # train and evaluate neural network on this data set
 
 if __name__ == '__main__':
     main()

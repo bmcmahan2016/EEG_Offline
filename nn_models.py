@@ -26,6 +26,7 @@ class ConvNet(nn.Module):
         self.c5 = nn.Conv2d(40, 40, (6, 1))
         self.m5 = nn.MaxPool2d((2, 1))
         self.lf = nn.Linear(640, num_classes)
+        self.drop_out = nn.Dropout(p=0.5)
     
     def forward(self, x):
         x = self.c1(x)
@@ -35,6 +36,7 @@ class ConvNet(nn.Module):
         x = F.relu(self.c5(x))
         x = self.m5(x)
         x = x.view(-1, 640)
+        x = self.drop_out(x)
         x = self.lf(x)
         return F.log_softmax(x, dim=1)
 

@@ -17,8 +17,9 @@ class DataManager():
                 3 : 'Right'}
 
     # pass all global parameters to instantion of class
-    def __init__(self, lowcut=5.0, highcut=50.0, fs=125.0, filter_order=5, bin_size=1, trial_delay=0, include_center=False):
+    def __init__(self, collection_type="non_gel", lowcut=5.0, highcut=50.0, fs=125.0, filter_order=5, bin_size=1, trial_delay=0, include_center=False):
         # filter params
+        self.collection_type = collection_type
         self.lowcut = lowcut
         self.highcut = highcut
         self.fs = fs
@@ -244,11 +245,12 @@ class DataManager():
         training_data = []
         training_classes = []
 
-        num_db_files = len(os.listdir('data')) - 1 # remove one for readme file
+        data_folder = os.path.join('data', self.collection_type)
+        num_db_files = len(os.listdir(data_folder)) - 1 # remove one for readme file
 
         # this assumes that db files are labeled experiment_1.db, experiment_2.db, etc
         for db_num in range(min(num_db_files, num_experiments)):
-            database = os.path.join('data', 'experiment_' + str(db_num + 1) + '.db')
+            database = os.path.join(data_folder, 'experiment_' + str(db_num + 1) + '.db')
 
             # create a database connection to load the data
             conn = self.CreateDBConnection(database)

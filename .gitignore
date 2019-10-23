@@ -1,3 +1,4 @@
 .vscode
-data/experiment*
+data/gel/experiment*
+data/non_gel/experiment*
 __pycache__
