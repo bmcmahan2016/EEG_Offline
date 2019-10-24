@@ -20,6 +20,7 @@ class ConvNet(nn.Module):
     def __init__(self, num_classes):
         super(ConvNet, self).__init__()
         self.c1 = nn.Conv2d(1, 10, (4, 1))
+        self.bn1 = nn.BatchNorm2d(10)
         self.c2 = nn.Conv2d(10, 10, (1, 16))
         self.c3 = nn.Conv2d(10, 20, (6, 1))
         self.c4 = nn.Conv2d(20, 40, (6, 1))

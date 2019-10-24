@@ -11,22 +11,45 @@ import torch.nn as nn
 from torch import optim
 import torch.utils.data as utils
 
-def UpdateClassificationTask(training_data, training_classes, include_classes):
+def UpdateClassificationTask(training_data, training_classes, include_classes, equalize_proportions=False):
     include_classes = set(include_classes)
     class_map = {}
     id_map = {}
+    class_count = {}
     for idx, name in enumerate(include_classes):
         class_map[name] = idx
         id_map[idx] = name
+        class_count[name] = 0
 
-    include_indices = []
-    for idx in range(len(training_classes)):
-        name = DataManager.CLASS_MAP[training_classes[idx]]
-        if name in include_classes:
-            training_classes[idx] = class_map[name]
-            include_indices.append(idx)
+    if (len(include_classes) < 4): # update classification task to include only these classes
+        include_indices = []
+        for idx in range(len(training_classes)):
+            name = DataManager.CLASS_MAP[training_classes[idx]]
+            if name in include_classes:
+                class_count[name] += 1
+                training_classes[idx] = class_map[name]
+                include_indices.append(idx)
 
-    return training_data[include_indices], training_classes[include_indices], id_map
+        training_data = training_data[include_indices]
+        training_classes = training_classes[include_indices]
+    else:
+        id_map = DataManager.CLASS_MAP
+
+    if equalize_proportions:
+        include_indices = []
+        nums = [val for _, val in class_count.items()]
+        min_count = min(nums)
+        for key in class_count:
+            class_count[key] = 0
+        for idx in range(len(training_classes)):
+            if class_count[id_map[training_classes[idx]]] < min_count:
+                class_count[id_map[training_classes[idx]]] += 1
+                include_indices.append(idx)
+
+        training_data = training_data[include_indices]
+        training_classes = training_classes[include_indices]
+
+    return training_data, training_classes, id_map
 
 def GetClassFrequency(training_classes, class_map):
     uniques, counts = np.unique(training_classes, return_counts=True)
@@ -53,29 +76,28 @@ def ClassifySVM(training_data, training_classes):
     test_acc = 100. * clf.score(X_test, y_test)
     print("Test accuracy:", test_acc)
     cm = confusion_matrix(y_test, y_pred)
-    print(cm)
+    print("Confusion Matrix:\n",cm)
 
 def TrainNN(net, train_loader):
     criterion = nn.NLLLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
-    for epoch in range(75):
+    for epoch in range(50):
         correct = 0
-        total = 0
-        for batch_idx, (data, target) in enumerate(train_loader):
-            # data, target = Variable(data), Variable(target)
+        train_loss = 0
+        for data, target in train_loader:
             optimizer.zero_grad()
             net_out = net(data)
             loss = criterion(net_out, target)
+            train_loss += loss.item() * len(data)
             loss.backward()
             optimizer.step()
             pred = net_out.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
-            total += len(data)
-            if batch_idx % 10 == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tAccuracy: {:.4f}\tLoss: {:.6f}'.format(
-                        epoch, batch_idx * len(data), len(train_loader.dataset),
-                            100. * batch_idx / len(train_loader), 100. * correct / total, 
-                            loss.item()))
+
+        train_loss /= len(train_loader.dataset)
+        print('Train Epoch: {} - Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'.format(
+            epoch, train_loss, correct, len(train_loader.dataset),
+            100. * correct / len(train_loader.dataset)))
 
 def TestNN(net, test_loader):
     net.eval()
@@ -92,7 +114,7 @@ def TestNN(net, test_loader):
 
     test_loss /= len(test_loader.dataset)
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
 
@@ -111,7 +133,7 @@ def ClassifyNN(training_data, training_classes, net):
     TrainNN(net, train_loader)
     TestNN(net, test_loader)
 
-def main():
+def GetArgs():
     parser = argparse.ArgumentParser(description='Predict reach directions')
     parser.add_argument("-e", "--experiment_limit", type=int, required=False, default=5,
         help="Number of db files to use")
@@ -130,18 +152,22 @@ def main():
         help="Any combination of reach directions to include in data set: Down Left Up Right")
     parser.add_argument("-m", "--model", type=str, required=False, default="SVM",
         help="Type of classifier model: SVM, Dense, or Conv (SVM is default)")
-    args = parser.parse_args()
+    parser.add_argument("-p", "--equalize_proportions", action="store_true",
+        help="Equalize the proportion of target reach classes")
+    return parser.parse_args()
 
+
+def main():
+    args = GetArgs()
     data_manager = DataManager(collection_type=args.collection_type, bin_size=args.bin_size,
         lowcut=args.lowcut, highcut=args.highcut, include_center=args.include_center) # set parameters for data filtering and collection
     training_data, training_classes = data_manager.GetData(args.experiment_limit, plot_freq=False) # get data for specified number of experiments
 
-    class_map = DataManager.CLASS_MAP
-    if (len(args.reach_directions) < 4): # update classification task to include only these classes
-        training_data, training_classes, class_map = UpdateClassificationTask(training_data, training_classes, args.reach_directions)
+    training_data, training_classes, class_map = UpdateClassificationTask(training_data, training_classes,
+        args.reach_directions, equalize_proportions=args.equalize_proportions)
     
     num_classes = GetClassFrequency(training_classes, class_map) # print the class frequency in the data set
-    
+
     # each data sample has 2D array of bin_size x eeg_channels
     # we must flatten this into a 1D vector for SVM classification
     n,h,c = training_data.shape

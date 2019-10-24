@@ -17,7 +17,8 @@ class DataManager():
                 3 : 'Right'}
 
     # pass all global parameters to instantion of class
-    def __init__(self, collection_type="non_gel", lowcut=5.0, highcut=50.0, fs=125.0, filter_order=5, bin_size=1, trial_delay=0, include_center=False):
+    def __init__(self, collection_type="non_gel", lowcut=5.0, highcut=50.0, fs=125.0,
+        filter_order=5, bin_size=1, trial_delay=0, include_center=False):
         # filter params
         self.collection_type = collection_type
         self.lowcut = lowcut
@@ -168,10 +169,7 @@ class DataManager():
         training_data = []
         training_classes = []
 
-        center_reach_map = {0 : 2,
-                            1 : 3,
-                            2 : 0,
-                            3 : 1}
+        center_reach_map = {0:2, 1:3, 2:0, 3:1}
 
         for i in range(len(target_classes)):
             if cur_target != target_classes[i]: # changing target indicates the start of a new reach direction
@@ -179,9 +177,12 @@ class DataManager():
                 bin_counter = 1
                 prev_target = cur_target
                 cur_target = target_classes[i]
-            if cur_target == 4 and not self.include_center:
-                continue # skip all reaches to center
-            elif delay_counter >= trial_delay and bin_counter >= self.bin_size:
+            true_target = cur_target
+            if cur_target == 4:
+                if not self.include_center:
+                    continue # skip all reaches to center
+                true_target = center_reach_map[prev_target]
+            if delay_counter >= trial_delay and bin_counter >= self.bin_size:
                 bin_start = i - self.bin_size + 1 # this data sample will include time steps from the previous bin_size eeg recordings
                 bin_end = i + 1
                 data_sample = eeg_data[bin_start:bin_end]
@@ -189,10 +190,7 @@ class DataManager():
                 if (np.sum(data_sample) == 0): # skip data samples that don't have any recordings
                     continue
                 training_data.append(data_sample)
-                if cur_target != 4:
-                    training_classes.append(cur_target) # add the class label
-                else:
-                    training_classes.append(center_reach_map[prev_target])
+                training_classes.append(true_target) # add the class label
             else:
                 bin_counter += 1
                 delay_counter += 1
