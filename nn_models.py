@@ -8,6 +8,8 @@ class Net(nn.Module):
         self.fc2 = nn.Linear(320, 640)
         self.fc3 = nn.Linear(640, 120)
         self.fc4 = nn.Linear(120, num_classes)
+        self.lr = 0.01
+        self.momentum = 0.9
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -17,10 +19,9 @@ class Net(nn.Module):
         return F.log_softmax(x, dim=1)
 
 class ConvNet(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, collection_type):
         super(ConvNet, self).__init__()
         self.c1 = nn.Conv2d(1, 10, (4, 1))
-        self.bn1 = nn.BatchNorm2d(10)
         self.c2 = nn.Conv2d(10, 10, (1, 16))
         self.c3 = nn.Conv2d(10, 20, (6, 1))
         self.c4 = nn.Conv2d(20, 40, (6, 1))
@@ -28,6 +29,11 @@ class ConvNet(nn.Module):
         self.m5 = nn.MaxPool2d((2, 1))
         self.lf = nn.Linear(640, num_classes)
         self.drop_out = nn.Dropout(p=0.5)
+        self.momentum = 0.9
+        if collection_type == "gel":
+            self.lr = 0.0001
+        else:
+            self.lr = 0.01
     
     def forward(self, x):
         x = self.c1(x)

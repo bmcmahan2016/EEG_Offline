@@ -1,5 +1,6 @@
 import numpy as np
 from load_data import DataManager
+from load_data import PlotData
 from nn_models import *
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
@@ -21,15 +22,16 @@ def UpdateClassificationTask(training_data, training_classes, include_classes, e
         id_map[idx] = name
         class_count[name] = 0
 
-    if (len(include_classes) < 4): # update classification task to include only these classes
-        include_indices = []
-        for idx in range(len(training_classes)):
-            name = DataManager.CLASS_MAP[training_classes[idx]]
-            if name in include_classes:
-                class_count[name] += 1
+    include_indices = []
+    for idx in range(len(training_classes)):
+        name = DataManager.CLASS_MAP[training_classes[idx]]
+        if name in include_classes:
+            class_count[name] += 1
+            if (len(include_classes) < 4):
                 training_classes[idx] = class_map[name]
                 include_indices.append(idx)
 
+    if (len(include_classes) < 4): # update classification task to include only these classes
         training_data = training_data[include_indices]
         training_classes = training_classes[include_indices]
     else:
@@ -80,7 +82,7 @@ def ClassifySVM(training_data, training_classes):
 
 def TrainNN(net, train_loader):
     criterion = nn.NLLLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=net.lr, momentum=net.momentum)
     for epoch in range(50):
         correct = 0
         train_loss = 0
@@ -156,16 +158,32 @@ def GetArgs():
         help="Equalize the proportion of target reach classes")
     return parser.parse_args()
 
+def VisualizeData(training_data, training_classes):
+    plot_map = {0 : False, 1 : False, 2 : False, 3 : False}
+    plot_data = []
+    plot_labels = []
+    for i in range(len(training_classes)):
+        if plot_map[training_classes[i]]:
+            continue
+        plot_data.append(training_data[i])
+        plot_labels.append(training_classes[i])
+        plot_map[training_classes[i]] = True
+        if len(plot_data) == 4:
+            break
+
+    PlotData(2, 2, plot_data, plot_labels)
+
 
 def main():
     args = GetArgs()
     data_manager = DataManager(collection_type=args.collection_type, bin_size=args.bin_size,
         lowcut=args.lowcut, highcut=args.highcut, include_center=args.include_center) # set parameters for data filtering and collection
-    training_data, training_classes = data_manager.GetData(args.experiment_limit, plot_freq=False) # get data for specified number of experiments
+    training_data, training_classes = data_manager.GetData(args.experiment_limit, plot_freq=True) # get data for specified number of experiments
 
     training_data, training_classes, class_map = UpdateClassificationTask(training_data, training_classes,
         args.reach_directions, equalize_proportions=args.equalize_proportions)
-    
+    # VisualizeData(training_data, training_classes)
+    # exit(1)
     num_classes = GetClassFrequency(training_classes, class_map) # print the class frequency in the data set
 
     # each data sample has 2D array of bin_size x eeg_channels
@@ -180,7 +198,7 @@ def main():
             net = Net(training_data.shape[1], num_classes)
         elif args.model == "Conv": # currently only works for bin size = 50
             training_data = training_data.reshape((n, 1, h, c))
-            net = ConvNet(num_classes)
+            net = ConvNet(num_classes, args.collection_type)
         ClassifyNN(training_data, training_classes, net) # train and evaluate neural network on this data set
 
 if __name__ == '__main__':

@@ -68,10 +68,12 @@ class DataManager():
         for c in range(16):
             plt.figure("fourier")
             plt.magnitude_spectrum(eeg_data[:,c], Fs=self.fs)
+            plt.title("Fourier Transform")
             plt.figure("welch")
             win = 4*self.fs
             freqs, psd = signal.welch(eeg_data[:,c], fs=self.fs, nperseg=win)
             plt.plot(freqs, psd)
+            plt.title("Power Spectral Density")
             plt.xlabel('Frequency (Hz)')
             plt.ylabel('Power spectral density (V^2 / Hz)')
         
