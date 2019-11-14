@@ -9,6 +9,7 @@ import msgpack
 from scipy.signal import butter, lfilter
 from scipy import signal
 import os
+from sklearn.model_selection import train_test_split
 
 class DataManager():
     CLASS_MAP = {0 : 'Down', # map numerical classes to reach directions
@@ -18,7 +19,8 @@ class DataManager():
 
     # pass all global parameters to instantion of class
     def __init__(self, collection_type="non_gel", lowcut=5.0, highcut=50.0, fs=125.0,
-        filter_order=5, bin_size=1, trial_delay=0, include_center=False):
+        filter_order=5, bin_size=1, trial_delay=0, include_center=False, sliding_window=False,
+        equalize_proportions=False, include_classes=["Down", "Left", "Up", "Right"], combine_features=False):
         # filter params
         self.collection_type = collection_type
         self.lowcut = lowcut
@@ -30,8 +32,12 @@ class DataManager():
         self.bin_size = bin_size
         self.trial_delay = trial_delay
         self.include_center = include_center
+        self.sliding_window = sliding_window
+        self.equalize_proportions = equalize_proportions
+        self.include_classes = include_classes
+        self.combine_features = combine_features
 
-    def ButterBandpass(self):
+    def ButterBandpass(self, lowcut, highcut):
         '''
         constructs a bandpass filter
 
@@ -42,12 +48,12 @@ class DataManager():
         -order: by default this is 5
         '''
         nyq = 0.5 * self.fs
-        low = self.lowcut / nyq
-        high = self.highcut / nyq
+        low = lowcut / nyq
+        high = highcut / nyq
         b, a = butter(self.filter_order, [low, high], btype='band')
         return b, a
 
-    def EEGFilter(self, data):
+    def EEGFilter(self, data, lowcut, highcut):
         '''
         EEGFilter will construct a notch filter to remove 60Hz noise
         from the EEG signal and will then construct a bandpass to 
@@ -55,7 +61,7 @@ class DataManager():
         '''
 
         # perform bandpass filering on the data
-        band_b, band_a = self.ButterBandpass()
+        band_b, band_a = self.ButterBandpass(lowcut, highcut)
         self.band_z = signal.lfilter_zi(band_b, 1) # state is used for sample-by-sample filtering
 
         result = np.zeros(data.size)
@@ -79,7 +85,7 @@ class DataManager():
         
         plt.show()
 
-    def FilterEEG(self, eeg1, eeg2, plot_freq=False):
+    def FilterEEG(self, eeg1, eeg2, lowcut, highcut, plot_freq=False):
         '''
         Will preform an offline preprocessing of EEG data to remove
         60Hz noise and filter data with bandpass of 5 to 50Hz
@@ -95,8 +101,8 @@ class DataManager():
         eeg1_filt = []
         eeg2_filt = []
         for c in range(8):
-            eeg1_filt.append(self.EEGFilter(eeg1[:,c]))
-            eeg2_filt.append(self.EEGFilter(eeg2[:,c]))
+            eeg1_filt.append(self.EEGFilter(eeg1[:,c], lowcut, highcut))
+            eeg2_filt.append(self.EEGFilter(eeg2[:,c], lowcut, highcut))
 
         # concatenate all 16 EEG channels into a single NumPy array
         eeg_data = np.zeros((len(eeg1_filt[0]), 16))
@@ -163,43 +169,47 @@ class DataManager():
         eeg_data = eeg_data[15*125:-5*125] # remove first 15 seconds and last 5 seconds of data
         target_classes = target_classes[15*125:-5*125]
 
-        trial_delay = np.ceil(self.trial_delay / 8.0) # each time tick is 8 ms
-        prev_target = 4
-        cur_target = 4
-        delay_counter = 0
-        bin_counter = 1
         training_data = []
         training_classes = []
 
         center_reach_map = {0:2, 1:3, 2:0, 3:1}
 
+        b = self.bin_size
+        inc = 4 if self.sliding_window else b
+        cur_target = target_classes[0]
+        prev_target = cur_target
+        start_idx = 0
         for i in range(len(target_classes)):
-            if cur_target != target_classes[i]: # changing target indicates the start of a new reach direction
-                delay_counter = 0
-                bin_counter = 1
+            if target_classes[i] != cur_target:
+                true_target = cur_target
+                if cur_target == 4:
+                    if not self.include_center:
+                        prev_target = cur_target
+                        cur_target = target_classes[i]
+                        start_idx = i
+                        continue # skip all reaches to center
+                    true_target = center_reach_map[prev_target]
+
+                x = eeg_data[start_idx:i]
+                s = self.trial_delay
+                next_sample = []
+                next_class = []
+                while s + b <= x.shape[0]:
+                    data_sample = x[s:s+b]
+                    if np.sum(data_sample) != 0:
+                        next_sample.append(x[s:s+b])
+                        next_class.append(true_target)
+                    s += inc
+
+                if len(next_sample) != 0:
+                    training_data.append(np.array(next_sample))
+                    training_classes.append(np.array(next_class))
+
                 prev_target = cur_target
                 cur_target = target_classes[i]
-            true_target = cur_target
-            if cur_target == 4:
-                if not self.include_center:
-                    continue # skip all reaches to center
-                true_target = center_reach_map[prev_target]
-            if delay_counter >= trial_delay and bin_counter >= self.bin_size:
-                bin_start = i - self.bin_size + 1 # this data sample will include time steps from the previous bin_size eeg recordings
-                bin_end = i + 1
-                data_sample = eeg_data[bin_start:bin_end]
-                bin_counter = 1 # reset bin counter
-                if (np.sum(data_sample) == 0): # skip data samples that don't have any recordings
-                    continue
-                training_data.append(data_sample)
-                training_classes.append(true_target) # add the class label
-            else:
-                bin_counter += 1
-                delay_counter += 1
+                start_idx = i
 
-        training_data = np.array(training_data) # convert to numpy array
-        training_classes = np.array(training_classes)
-        return training_data, training_classes
+        return np.array(training_data), np.array(training_classes)
 
     def UnpackBLOBS(self, data):
         '''
@@ -269,16 +279,73 @@ class DataManager():
                 target_pos = self.UnpackBLOBS(target_pos_b)
 
                 # filter the EEG data
-                eeg_data = self.FilterEEG(eeg_i, eeg_ii, plot_freq=plot_freq)
+                if not self.combine_features:
+                    eeg_data = self.FilterEEG(eeg_i, eeg_ii, self.lowcut, self.highcut, plot_freq=plot_freq)
+                else:
+                    eeg_data_1 = self.FilterEEG(eeg_i, eeg_ii, 8.0, 12.0, plot_freq=plot_freq)
+                    eeg_data_2 = self.FilterEEG(eeg_i, eeg_ii, 12.0, 30.0, plot_freq=plot_freq)
+                    eeg_data_3 = self.FilterEEG(eeg_i, eeg_ii, 30.0, 60.0, plot_freq=plot_freq)
+                    eeg_data = np.stack([eeg_data_1, eeg_data_2, eeg_data_3], axis=1)
 
                 # partition the EEG data into trials based on target position
                 target_classes = self.PartitionTrials(target_pos)
 
                 data, classes = self.GetExperimentData(eeg_data, target_classes)
-                training_data.append(data)
-                training_classes.append(classes)
-        
-        return np.vstack(training_data), np.hstack(training_classes)
+                if len(training_data) == 0:
+                    training_data = data
+                    training_classes = classes
+                else:
+                    training_data = np.concatenate((training_data, data))
+                    training_classes = np.concatenate((training_classes, classes))
+
+        X_train, X_test, y_train, y_test = train_test_split(training_data, training_classes, test_size=0.2, random_state=0) 
+        X_train, y_train, class_map = self.UpdateClassificationTask(np.vstack(X_train), np.hstack(y_train))
+        X_test, y_test, _ = self.UpdateClassificationTask(np.vstack(X_test), np.hstack(y_test))
+        if self.combine_features:
+            X_train = np.swapaxes(X_train, 1, 2)
+            X_test = np.swapaxes(X_test, 1, 2)
+        return X_train, X_test, y_train, y_test, class_map
+
+    def UpdateClassificationTask(self, training_data, training_classes):
+        include_classes = set(self.include_classes)
+        class_map = {}
+        id_map = {}
+        class_count = {}
+        for idx, name in enumerate(include_classes):
+            class_map[name] = idx
+            id_map[idx] = name
+            class_count[name] = 0
+
+        include_indices = []
+        for idx in range(len(training_classes)):
+            name = DataManager.CLASS_MAP[training_classes[idx]]
+            if name in include_classes:
+                class_count[name] += 1
+                if (len(include_classes) < 4):
+                    training_classes[idx] = class_map[name]
+                    include_indices.append(idx)
+
+        if (len(include_classes) < 4): # update classification task to include only these classes
+            training_data = training_data[include_indices]
+            training_classes = training_classes[include_indices]
+        else:
+            id_map = self.CLASS_MAP
+
+        if self.equalize_proportions:
+            include_indices = []
+            nums = [val for _, val in class_count.items()]
+            min_count = min(nums)
+            for key in class_count:
+                class_count[key] = 0
+            for idx in range(len(training_classes)):
+                if class_count[id_map[training_classes[idx]]] < min_count:
+                    class_count[id_map[training_classes[idx]]] += 1
+                    include_indices.append(idx)
+
+            training_data = training_data[include_indices]
+            training_classes = training_classes[include_indices]
+
+        return training_data, training_classes, id_map
 
 def PlotData(num_rows, num_cols, plot_data, plot_labels):
     '''
