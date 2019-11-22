@@ -179,7 +179,11 @@ class DataManager():
         cur_target = target_classes[0]
         prev_target = cur_target
         start_idx = 0
-        for i in range(len(target_classes)):
+        skip_zeros = 0
+        # while skip_zeros < len(target_classes) and np.sum(eeg_data[skip_zeros]) == 0:
+        #     skip_zeros += 1
+        # print(skip_zeros)
+        for i in range(skip_zeros, len(target_classes)):
             if target_classes[i] != cur_target:
                 true_target = cur_target
                 if cur_target == 4:
@@ -195,10 +199,11 @@ class DataManager():
                 next_sample = []
                 next_class = []
                 while s + b <= x.shape[0]:
-                    data_sample = x[s:s+b]
-                    if np.sum(data_sample) != 0:
-                        next_sample.append(x[s:s+b])
-                        next_class.append(true_target)
+                    # data_sample = x[s:s+b]
+                    # if np.sum(data_sample) == 0:
+                    #     print(start_idx)
+                    next_sample.append(x[s:s+b])
+                    next_class.append(true_target)
                     s += inc
 
                 if len(next_sample) != 0:
@@ -297,7 +302,7 @@ class DataManager():
                 else:
                     training_data = np.concatenate((training_data, data))
                     training_classes = np.concatenate((training_classes, classes))
-
+        
         X_train, X_test, y_train, y_test = train_test_split(training_data, training_classes, test_size=0.2, random_state=0) 
         X_train, y_train, class_map = self.UpdateClassificationTask(np.vstack(X_train), np.hstack(y_train))
         X_test, y_test, _ = self.UpdateClassificationTask(np.vstack(X_test), np.hstack(y_test))

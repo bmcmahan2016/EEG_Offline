@@ -74,7 +74,7 @@ class ConvNet2(nn.Module):
         self.lf = nn.Linear(320, num_classes)
         self.momentum = 0.9
         if collection_type == "gel":
-            self.lr = 0.0005
+            self.lr = 0.0008
         else:
             self.lr = 0.01
         self.name = "ConvNet2"
