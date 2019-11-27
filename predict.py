@@ -127,6 +127,7 @@ def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name):
     # scheduler = StepLR(optimizer, 10, gamma=0.9)
     min_loss = 1
     saved_model = {}
+    saved_opt = {}
     model_epoch = 1
     for epoch in epochs:
         train_l, train_a = TrainNN(net, train_loader, optimizer, epoch)
@@ -137,6 +138,7 @@ def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name):
         if test_l < min_loss:
             min_loss = test_l
             saved_model = net.state_dict()
+            saved_opt = optimizer.state_dict()
             model_epoch = epoch
         # scheduler.step()
         train_loss.append(train_l)
@@ -153,7 +155,12 @@ def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name):
         now = datetime.now()
         timestamp = now.strftime("%d_%H_%M")
         filename = os.path.join("saved_models", model_name + "_" + net.name + "_" + timestamp + ".pt")
-        torch.save(saved_model, filename)
+        torch.save({
+            'model' : saved_model,
+            'epoch' : model_epoch,
+            'optimizer' : saved_opt,
+            'loss' : min_loss,
+            }, filename)
         print("Saved model from epoch {} with test loss {}".format(model_epoch, min_loss))
 
 def GetArgs():
@@ -162,8 +169,8 @@ def GetArgs():
         help="Number of db files to use")
     parser.add_argument("-c", "--collection_type", type=str, required=False, default="gel",
         help="Type of data collection to use: gel or non_gel (gel is default)")
-    parser.add_argument("-b", "--bin_size", type=int, required=False, default=50,
-        help="Number of time ticks per data sample (50 is default)")
+    parser.add_argument("-b", "--bin_size", type=int, required=False, default=80,
+        help="Number of time ticks per data sample (80 is default)")
     parser.add_argument("-l", "--lowcut", type=float, required=False, default=30.0,
         help="Lowcut frequency for bandpass filter (30 is default)")
     parser.add_argument("-t", "--highcut", type=float, required=False, default=60.0,

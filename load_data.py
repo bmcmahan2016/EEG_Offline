@@ -120,8 +120,9 @@ class DataManager():
         median = ( trace_max + trace_min ) / 2
         data -= median
         A = ( trace_max - trace_min ) / 2
-        data /= A
-        data = np.round(data)
+        if A != 0:
+            data /= A
+            data = np.round(data)
         return data
 
     def PartitionTrials(self, target_pos):
