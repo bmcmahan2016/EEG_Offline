@@ -176,7 +176,7 @@ class DataManager():
         center_reach_map = {0:2, 1:3, 2:0, 3:1}
 
         b = self.bin_size
-        inc = 4 if self.sliding_window else b
+        inc = 5 if self.sliding_window else b
         cur_target = target_classes[0]
         prev_target = cur_target
         start_idx = 0
@@ -262,7 +262,7 @@ class DataManager():
         training_classes = []
 
         data_folder = os.path.join('data', self.collection_type)
-        num_db_files = len(os.listdir(data_folder)) - 1 # remove one for readme file
+        num_db_files = len(os.listdir(data_folder)) # remove one for readme file
 
         # this assumes that db files are labeled experiment_1.db, experiment_2.db, etc
         for db_num in range(min(num_db_files, num_experiments)):

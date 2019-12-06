@@ -109,8 +109,14 @@ def PlotNNResults(epochs, loss, accuracy, plot_type):
     plt.xlabel("Epoch")
     fig.suptitle(plot_type + " Results")
 
-def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name):
-    epochs = range(1, num_epochs + 1)
+def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name, load_model):
+    base_epoch = 1
+    if load_model != "":
+        state = torch.load("saved_models/" + load_model)
+        net.load_state_dict(state['model'])
+        base_epoch += state['epoch']
+
+    epochs = range(base_epoch, base_epoch + num_epochs)
     plot_results = True
     X_train_tensor = torch.Tensor(X_train)
     y_train_tensor = torch.Tensor(y_train).long()
@@ -124,6 +130,8 @@ def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name):
 
     train_loss, train_acc, test_loss, test_acc = [], [], [], []
     optimizer = optim.SGD(net.parameters(), lr=net.lr, momentum=net.momentum)
+    if load_model != "":
+        optimizer.load_state_dict(state['optimizer'])
     # scheduler = StepLR(optimizer, 10, gamma=0.9)
     min_loss = 1
     saved_model = {}
@@ -192,6 +200,8 @@ def GetArgs():
         help="Number of epochs for training neural nets (60 is default)")
     parser.add_argument("-n", "--model_name", type=str, required=False, default="",
         help="Non-empty name will save trained saved model with specified name")
+    parser.add_argument("-z", "--load_model", type=str, required=False, default="",
+        help="Non-empty name will continue training the specified model")
     return parser.parse_args()
 
 def VisualizeData(training_data, training_classes):
@@ -237,7 +247,7 @@ def main():
                 X_train = np.expand_dims(X_train, axis=1)
                 X_test = np.expand_dims(X_test, axis=1)
             net = ConvNet2(num_classes, args.collection_type, args.combine_features)
-        ClassifyNN(X_train, X_test, y_train, y_test, net, args.num_epochs, args.model_name) # train and evaluate neural network on this data set
+        ClassifyNN(X_train, X_test, y_train, y_test, net, args.num_epochs, args.model_name, args.load_model) # train and evaluate neural network on this data set
 
 if __name__ == '__main__':
     main()
