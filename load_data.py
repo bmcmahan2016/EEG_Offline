@@ -10,6 +10,7 @@ from scipy.signal import butter, lfilter
 from scipy import signal
 import os
 from sklearn.model_selection import train_test_split
+import scipy.io
 
 class DataManager():
     CLASS_MAP = {0 : 'Down', # map numerical classes to reach directions
@@ -17,15 +18,28 @@ class DataManager():
                 2 : 'Up',
                 3 : 'Right'}
 
-    # pass all global parameters to instantion of class
+    ANT_EXP_MAP = {
+        1 : 47278,
+        2 : 33361,
+        3 : 48980,
+        4 : 33581,
+        5 : 46634,
+        6 : 46432,
+        7 : 42106,
+        8 : 38155
+    }
+
+    # pass all global parameters to instance of class
     def __init__(self, collection_type="non_gel", lowcut=5.0, highcut=50.0, fs=125.0,
         filter_order=5, bin_size=1, trial_delay=0, include_center=False, sliding_window=False,
-        equalize_proportions=False, include_classes=["Down", "Left", "Up", "Right"], combine_features=False):
+        equalize_proportions=False, include_classes=["Down", "Left", "Up", "Right"], combine_features=False,
+        start_exp=1, downsample=8, inc=5, augment_training=False):
         # filter params
         self.collection_type = collection_type
         self.lowcut = lowcut
         self.highcut = highcut
-        self.fs = fs
+        self.fs = 125.0 if collection_type != "ant" else 250.0
+        self.orig_fs = 1000.0 if collection_type != "ant" else 2000.0
         self.filter_order = filter_order
 
         # data set params
@@ -36,6 +50,10 @@ class DataManager():
         self.equalize_proportions = equalize_proportions
         self.include_classes = include_classes
         self.combine_features = combine_features
+        self.start_exp = start_exp
+        self.downsample = 8 if collection_type != "ant" else 4
+        self.inc = inc
+        self.augment_training = augment_training
 
     def ButterBandpass(self, lowcut, highcut):
         '''
@@ -47,11 +65,13 @@ class DataManager():
         -fs: sampling rate of the signal
         -order: by default this is 5
         '''
-        nyq = 0.5 * self.fs
+        nyq = 0.5 * self.orig_fs
         low = lowcut / nyq
         high = highcut / nyq
-        b, a = butter(self.filter_order, [low, high], btype='band')
-        return b, a
+        high = 100.0 / nyq
+        # b, a = butter(self.filter_order, [low, high], btype='band')
+        sos = butter(self.filter_order, high, btype='low', output='sos')
+        return sos
 
     def EEGFilter(self, data, lowcut, highcut):
         '''
@@ -59,29 +79,31 @@ class DataManager():
         from the EEG signal and will then construct a bandpass to 
         filter the EEG signal between 5 and 50 Hz
         '''
-
         # perform bandpass filering on the data
-        band_b, band_a = self.ButterBandpass(lowcut, highcut)
-        self.band_z = signal.lfilter_zi(band_b, 1) # state is used for sample-by-sample filtering
+        sos = self.ButterBandpass(lowcut, highcut)
+        # self.band_z = signal.lfilter_zi(band_b, 1) # state is used for sample-by-sample filtering
+        # self.band_z = signal.sosfilt_zi(sos)
 
-        result = np.zeros(data.size)
-        for i, x in enumerate(data):
-            result[i], self.band_z = lfilter(band_b, band_a, [x], zi=self.band_z)
+        # result = np.zeros(data.size)
+        # for i, x in enumerate(data):
+        #     # result[i], self.band_z = lfilter(band_b, band_a, [x], zi=self.band_z)
+        #     result[i], self.band_z = signal.sosfilt(sos, [x], zi=self.band_z)
 
+        result = signal.sosfilt(sos, data)
         return result
 
-    def PlotFreqSpectrum(self, eeg_data):
-        for c in range(16):
+    def PlotFreqSpectrum(self, eeg_data, fs=125.0, channels=16):
+        for c in range(channels):
             plt.figure("fourier")
-            plt.magnitude_spectrum(eeg_data[:,c], Fs=self.fs)
+            plt.magnitude_spectrum(eeg_data[:,c], Fs=fs)
             plt.title("Fourier Transform")
-            plt.figure("welch")
-            win = 4*self.fs
-            freqs, psd = signal.welch(eeg_data[:,c], fs=self.fs, nperseg=win)
-            plt.plot(freqs, psd)
-            plt.title("Power Spectral Density")
-            plt.xlabel('Frequency (Hz)')
-            plt.ylabel('Power spectral density (V^2 / Hz)')
+            # plt.figure("welch")
+            # win = 4*self.fs
+            # freqs, psd = signal.welch(eeg_data[:,c], fs=self.fs, nperseg=win)
+            # plt.plot(freqs, psd)
+            # plt.title("Power Spectral Density")
+            # plt.xlabel('Frequency (Hz)')
+            # plt.ylabel('Power spectral density (V^2 / Hz)')
         
         plt.show()
 
@@ -93,16 +115,12 @@ class DataManager():
         eeg_data: NumPy array containing eeg data with shape (num_time_steps, 16)
         '''
 
-        #downsample EEG data from 1,000Hz to 125Hz
-        eeg1 = eeg1[::8]
-        eeg2 = eeg2[::8]
-
-        # filter the EEG data
+        # filter the EEG data  and downsample EEG data from 1,000Hz to 125Hz
         eeg1_filt = []
         eeg2_filt = []
         for c in range(8):
-            eeg1_filt.append(self.EEGFilter(eeg1[:,c], lowcut, highcut))
-            eeg2_filt.append(self.EEGFilter(eeg2[:,c], lowcut, highcut))
+            eeg1_filt.append(self.EEGFilter(eeg1[:,c], lowcut, highcut)[::self.downsample])
+            eeg2_filt.append(self.EEGFilter(eeg2[:,c], lowcut, highcut)[::self.downsample])
 
         # concatenate all 16 EEG channels into a single NumPy array
         eeg_data = np.zeros((len(eeg1_filt[0]), 16))
@@ -113,6 +131,12 @@ class DataManager():
             self.PlotFreqSpectrum(eeg_data)
 
         return eeg_data
+
+    def FilterANT(self, raw_data, lowcut, highcut):
+        for c in range(64):
+            raw_data[c] = self.EEGFilter(raw_data[c], lowcut, highcut)
+
+        return raw_data.T
 
     def Binarize(self, data):
         trace_max = np.max(data)
@@ -138,7 +162,7 @@ class DataManager():
         -training_classes: the target class for each time tick
         '''
         # downsample target position so it lines up with EEG data
-        target_pos = target_pos[::8]
+        target_pos = target_pos[::self.downsample]
         # binarize the target position so it is either +/-1
         target_pos_x = self.Binarize(target_pos[:,0])
         target_pos_y = self.Binarize(target_pos[:,1])
@@ -167,20 +191,24 @@ class DataManager():
         -training_data: binned eeg_data with reaches to the center removed - has shape (n, bin_size, 16)
         -training_classes: the class associated with each row of training data - has shape (n,)
         '''
-        eeg_data = eeg_data[15*125:-5*125] # remove first 15 seconds and last 5 seconds of data
-        target_classes = target_classes[15*125:-5*125]
+        if self.collection_type != "ant":
+            eeg_data = eeg_data[int(30*self.fs):int(-5*self.fs)] # remove first 30 seconds and last 5 seconds of data
+        target_classes = target_classes[int(30*self.fs):int(-5*self.fs)]
 
-        training_data = []
-        training_classes = []
+        training_data = [np.zeros(shape=(1, 1, 1))]
+        training_classes = [np.zeros(shape=(1,))]
 
         center_reach_map = {0:2, 1:3, 2:0, 3:1}
 
+        trial_count_map = {0:0, 1:0, 2:0, 3:0}
+
         b = self.bin_size
-        inc = 5 if self.sliding_window else b
+        inc = self.inc if self.sliding_window else b
         cur_target = target_classes[0]
         prev_target = cur_target
         start_idx = 0
         skip_zeros = 0
+        trial_counts = []
         # while skip_zeros < len(target_classes) and np.sum(eeg_data[skip_zeros]) == 0:
         #     skip_zeros += 1
         # print(skip_zeros)
@@ -207,15 +235,17 @@ class DataManager():
                     next_class.append(true_target)
                     s += inc
 
-                if len(next_sample) != 0:
+                if len(next_sample) > 0:
                     training_data.append(np.array(next_sample))
                     training_classes.append(np.array(next_class))
+                    trial_counts.append(str(true_target) + "_" + str(trial_count_map[true_target]))
+                    trial_count_map[true_target] += 1
 
                 prev_target = cur_target
                 cur_target = target_classes[i]
                 start_idx = i
 
-        return np.array(training_data), np.array(training_classes)
+        return np.array(training_data), np.array(training_classes), trial_counts
 
     def UnpackBLOBS(self, data):
         '''
@@ -246,6 +276,36 @@ class DataManager():
     
         return None
 
+    def test_alignment(self, eeg_data, target_classes):
+        bounds = [x for x in range(1, len(target_classes)) if target_classes[x] != 4 and target_classes[x] != target_classes[x - 1]]
+        print(np.diff(bounds[:10]))
+        count = 0
+        for i in range(1, len(bounds)):
+            if target_classes[bounds[i-1]] != 4:
+                plt.plot(eeg_data[:int(self.fs*30), 0])
+                plt.figure()
+                plt.plot(eeg_data[bounds[i-1]:bounds[i], 40])
+                plt.title(DataManager.CLASS_MAP[target_classes[bounds[i-1]]])
+                plt.show()
+                count += 1
+            if count >= 10:
+                break
+        exit(1)
+
+    def AugmentTrainingData(self, X_train, y_train):
+        for i in range(len(X_train)):
+            x = np.reshape(X_train[i], (-1, X_train[i].shape[2]))
+            start = 0
+            new_data = []
+            while start + self.bin_size <= x.shape[0]:
+                new_data.append(x[start:(start + self.bin_size)])
+                start += self.inc
+
+            X_train[i] = np.array(new_data)
+            y_train[i] = np.array([y_train[i][0]] * len(new_data))
+
+        return X_train, y_train
+
     def GetData(self, num_experiments, plot_freq=False):
         '''
         GetData will return training data and classes for a specified number of experiments
@@ -265,8 +325,8 @@ class DataManager():
         num_db_files = len(os.listdir(data_folder)) # remove one for readme file
 
         # this assumes that db files are labeled experiment_1.db, experiment_2.db, etc
-        for db_num in range(min(num_db_files, num_experiments)):
-            database = os.path.join(data_folder, 'experiment_' + str(db_num + 1) + '.db')
+        for db_num in range(self.start_exp, min(num_db_files, num_experiments + self.start_exp)):
+            database = os.path.join(data_folder, 'experiment_' + str(db_num) + '.db')
 
             # create a database connection to load the data
             conn = self.CreateDBConnection(database)
@@ -284,19 +344,39 @@ class DataManager():
                 eeg_ii = self.UnpackBLOBS(eeg_ii_b)
                 target_pos = self.UnpackBLOBS(target_pos_b)
 
-                # filter the EEG data
-                if not self.combine_features:
-                    eeg_data = self.FilterEEG(eeg_i, eeg_ii, self.lowcut, self.highcut, plot_freq=plot_freq)
-                else:
-                    eeg_data_1 = self.FilterEEG(eeg_i, eeg_ii, 8.0, 12.0, plot_freq=plot_freq)
-                    eeg_data_2 = self.FilterEEG(eeg_i, eeg_ii, 12.0, 30.0, plot_freq=plot_freq)
-                    eeg_data_3 = self.FilterEEG(eeg_i, eeg_ii, 30.0, 60.0, plot_freq=plot_freq)
-                    eeg_data = np.stack([eeg_data_1, eeg_data_2, eeg_data_3], axis=1)
-
                 # partition the EEG data into trials based on target position
                 target_classes = self.PartitionTrials(target_pos)
 
-                data, classes = self.GetExperimentData(eeg_data, target_classes)
+                # filter the EEG data
+                if self.collection_type != 'ant':
+                    if not self.combine_features:
+                        eeg_data = self.FilterEEG(eeg_i, eeg_ii, self.lowcut, self.highcut, plot_freq=plot_freq)
+                    else:
+                        eeg_data_1 = self.FilterEEG(eeg_i, eeg_ii, 8.0, 12.0, plot_freq=plot_freq)
+                        eeg_data_2 = self.FilterEEG(eeg_i, eeg_ii, 12.0, 30.0, plot_freq=plot_freq)
+                        eeg_data_3 = self.FilterEEG(eeg_i, eeg_ii, 30.0, 60.0, plot_freq=plot_freq)
+                        eeg_data = np.stack([eeg_data_1, eeg_data_2, eeg_data_3], axis=1)
+                else:
+                    matfile = os.path.join(data_folder, 'experiment_' + str(db_num) + '.mat')
+                    raw_data = np.array(scipy.io.loadmat(matfile)['data_sample'])
+                    raw_data = raw_data[:64, DataManager.ANT_EXP_MAP[db_num]:]
+                    raw_data = raw_data[:, int(30*self.orig_fs):int(-5*self.orig_fs)]
+                    # self.test_alignment(raw_data.T, target_classes[int(30*self.fs):int(-5*self.fs)])
+                    eeg_data = self.FilterANT(raw_data, self.lowcut, self.highcut)[::2*self.downsample]
+                    # eeg_data = raw_data.T[::2*self.downsample]
+                    # self.PlotFreqSpectrum(eeg_data, fs=250.0, channels=10)
+                    # exit(1)
+                    # plt.plot(eeg_data[:, 40])
+                    # plt.show()
+                    # exit(1)
+
+                data, classes, trial_counts = self.GetExperimentData(eeg_data, target_classes)
+                data = data[1:]
+                classes = classes[1:]
+                # print(data.shape)
+                # print(len(trial_counts))
+                # print(trial_counts)
+                # exit(1)
                 if len(training_data) == 0:
                     training_data = data
                     training_classes = classes
@@ -305,6 +385,8 @@ class DataManager():
                     training_classes = np.concatenate((training_classes, classes))
         
         X_train, X_test, y_train, y_test = train_test_split(training_data, training_classes, test_size=0.2, random_state=0) 
+        if self.augment_training and not self.sliding_window:
+            X_train, y_train = self.AugmentTrainingData(X_train, y_train)
         X_train, y_train, class_map = self.UpdateClassificationTask(np.vstack(X_train), np.hstack(y_train))
         X_test, y_test, _ = self.UpdateClassificationTask(np.vstack(X_test), np.hstack(y_test))
         if self.combine_features:

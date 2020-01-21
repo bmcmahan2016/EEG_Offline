@@ -121,7 +121,7 @@ def ClassifyNN(X_train, X_test, y_train, y_test, net, num_epochs, model_name, lo
     X_train_tensor = torch.Tensor(X_train)
     y_train_tensor = torch.Tensor(y_train).long()
     train_dataset = utils.TensorDataset(X_train_tensor, y_train_tensor)
-    train_loader = utils.DataLoader(train_dataset, batch_size=100)
+    train_loader = utils.DataLoader(train_dataset, batch_size=40)
 
     X_test_tensor = torch.Tensor(X_test)
     y_test_tensor = torch.Tensor(y_test).long()
@@ -224,10 +224,14 @@ def main():
     data_manager = DataManager(collection_type=args.collection_type, bin_size=args.bin_size, trial_delay=15,
         lowcut=args.lowcut, highcut=args.highcut, include_center=args.include_center,
         sliding_window=args.sliding_window, equalize_proportions=args.equalize_proportions,
-        include_classes=args.reach_directions, combine_features=args.combine_features) # set parameters for data filtering and collection
+        include_classes=args.reach_directions, combine_features=args.combine_features,
+        start_exp=1, inc=40, augment_training=False) # set parameters for data filtering and collection
     X_train, X_test, y_train, y_test, class_map = data_manager.GetData(args.experiment_limit, plot_freq=False) # get data for specified number of experiments
     print("Class map:", class_map)
+    print(X_train.shape)
+
     # VisualizeData(X_train, y_test)
+    # exit(1)
 
     num_classes = GetClassFrequency(y_train, class_map) # print the class frequency in the data set
 
@@ -242,11 +246,14 @@ def main():
             X_train = X_train.reshape((X_train.shape[0], -1))
             X_test = X_test.reshape((X_test.shape[0], -1))
             net = Net(X_train.shape[1], num_classes)
-        elif args.model == "Conv": # currently only works for bin size = 50
+        elif args.model == "Conv": # currently only works for bin size = 80
             if not args.combine_features:
                 X_train = np.expand_dims(X_train, axis=1)
                 X_test = np.expand_dims(X_test, axis=1)
-            net = ConvNet2(num_classes, args.collection_type, args.combine_features)
+            if args.collection_type != 'ant':
+                net = ConvNet2(num_classes, args.collection_type, args.combine_features)
+            else:
+                net = ConvNetANT(num_classes)
         ClassifyNN(X_train, X_test, y_train, y_test, net, args.num_epochs, args.model_name, args.load_model) # train and evaluate neural network on this data set
 
 if __name__ == '__main__':

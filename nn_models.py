@@ -95,3 +95,37 @@ class ConvNet2(nn.Module):
         x = self.lf(x)
         return F.log_softmax(x, dim=1)
 
+class ConvNetANT(nn.Module):
+    def __init__(self, num_classes):
+        super(ConvNetANT, self).__init__()
+        self.c1 = nn.Conv2d(1, 8, (61, 1), padding=(30, 0))
+        self.bn1 = nn.BatchNorm2d(8)
+        self.c2 = nn.Conv2d(8, 16, (1, 64), groups=8)
+        self.bn2 = nn.BatchNorm2d(16)
+        self.a3 = nn.AvgPool2d((2, 1))
+        self.d3 = nn.Dropout(p=0.5)
+        self.c4 = nn.Conv2d(16, 16, (31, 1), groups=16, padding=(15, 0))
+        self.c5 = nn.Conv2d(16, 16, 1)
+        self.bn5 = nn.BatchNorm2d(16)
+        self.a5 = nn.AvgPool2d((2, 1))
+        self.d5 = nn.Dropout(p=0.5)
+        self.lf = nn.Linear(640, num_classes)
+        self.momentum = 0.9
+        self.lr = 0.005
+        self.name = "ConvNetANT"
+    
+    def forward(self, x):
+        x = self.c1(x)
+        x = self.bn1(x)
+        x = self.c2(x)
+        x = F.elu(self.bn2(x))
+        x = self.a3(x)
+        x = self.d3(x)
+        x = self.c4(x)
+        x = self.c5(x)
+        x = F.elu(self.bn5(x))
+        x = self.a5(x)
+        x = self.d5(x)
+        x = x.view(-1, 640)
+        x = self.lf(x)
+        return F.log_softmax(x, dim=1)
