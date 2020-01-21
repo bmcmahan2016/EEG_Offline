@@ -362,8 +362,8 @@ class DataManager():
                     raw_data = raw_data[:64, DataManager.ANT_EXP_MAP[db_num]:]
                     raw_data = raw_data[:, int(30*self.orig_fs):int(-5*self.orig_fs)]
                     # self.test_alignment(raw_data.T, target_classes[int(30*self.fs):int(-5*self.fs)])
-                    eeg_data = self.FilterANT(raw_data, self.lowcut, self.highcut)[::2*self.downsample]
-                    # eeg_data = raw_data.T[::2*self.downsample]
+                    # eeg_data = self.FilterANT(raw_data, self.lowcut, self.highcut)[::2*self.downsample]
+                    eeg_data = raw_data.T[::2*self.downsample]
                     # self.PlotFreqSpectrum(eeg_data, fs=250.0, channels=10)
                     # exit(1)
                     # plt.plot(eeg_data[:, 40])
